@@ -26,7 +26,7 @@ jobs:
     - name: Check Scale Code Style
       run: mvn scalastyle:check -Pspark-2
     - name: Unit Test
-      run: mvn test cobertura:cobertura -Pspark-2 -Plog4j-1
+      run: mvn test -Pspark-2 -Plog4j-1
     - name: Upload coverage reports to Codecov with GitHub Action
       uses: codecov/codecov-action@v3
   build_rss_on_spark_3:
@@ -45,7 +45,7 @@ jobs:
     - name: Check Scale Code Style
       run: mvn scalastyle:check -Pspark-3
     - name: Unit Test
-      run: mvn test cobertura:cobertura -Pspark-3 -Plog4j-1
+      run: mvn test  -Pspark-3 -Plog4j-1
     - name: Upload coverage reports to Codecov with GitHub Action
       uses: codecov/codecov-action@v3
     needs: build_rss_on_spark_2
