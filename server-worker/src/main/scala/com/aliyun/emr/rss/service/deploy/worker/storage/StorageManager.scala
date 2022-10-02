@@ -23,7 +23,7 @@ import java.nio.file.{Files, Paths}
 import java.util
 import java.util.{Comparator, UUID}
 import java.util.concurrent.{ConcurrentHashMap, Executors, ThreadPoolExecutor, TimeUnit}
-import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.{AtomicInteger, AtomicReference}
 import java.util.function.IntUnaryOperator
 
 import scala.collection.JavaConverters._
@@ -142,15 +142,9 @@ final private[worker] class StorageManager(
 
   val memoryStorageRatio = RssConf.memoryStorageRatio(conf)
   // keep larger memory shuffle writers to front part of the list
-  val memoryShuffleWriters = new util.PriorityQueue[FileWriter](new Comparator[FileWriter] {
-    override def compare(o1: FileWriter, o2: FileWriter): Int = {
-      if (o2.getBytesFlushed > o1.getBytesFlushed) {
-        -1
-      } else {
-        0
-      }
-    }
-  })
+  //applicationid-shuffleid-epoch
+  val memoryShuffleWriters = new ConcurrentHashMap[String, FileWriter]()
+  val largestMemoryShuffleWriter = new AtomicReference[FileWriter]()
   val memoryStorageEnabled =
     if (memoryStorageRatio > 0.0d) {
       true
@@ -158,12 +152,13 @@ final private[worker] class StorageManager(
       false
     }
 
-  val memoryFlusher =
+  val memoryFlusher = {
     if (memoryStorageEnabled) {
       Some(new MemoryFlusher)
     } else {
       None
     }
+  }
 
   override def notifyError(mountPoint: String, diskStatus: DiskStatus): Unit = this.synchronized {
     if (diskStatus == DiskStatus.IO_HANG) {

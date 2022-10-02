@@ -30,8 +30,8 @@ import org.apache.hadoop.fs.Path;
 import com.aliyun.emr.rss.common.util.Utils;
 
 public class FileInfo {
-  private final String filePath;
-  private final List<Long> chunkOffsets;
+  protected final String filePath;
+  protected final List<Long> chunkOffsets;
 
   public FileInfo(String filePath, List<Long> chunkOffsets) {
     this.filePath = filePath;

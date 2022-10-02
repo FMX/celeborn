@@ -26,7 +26,7 @@ import io.netty.util.concurrent.{Future, GenericFutureListener}
 
 import com.aliyun.emr.rss.common.exception.RssException
 import com.aliyun.emr.rss.common.internal.Logging
-import com.aliyun.emr.rss.common.meta.{FileInfo, FileManagedBuffers}
+import com.aliyun.emr.rss.common.meta.{FileInfo, LocalShuffleBuffers}
 import com.aliyun.emr.rss.common.metrics.source.RPCSource
 import com.aliyun.emr.rss.common.network.buffer.NioManagedBuffer
 import com.aliyun.emr.rss.common.network.client.TransportClient
@@ -97,8 +97,10 @@ class FetchHandler(val conf: TransportConf) extends BaseMessageHandler with Logg
           client.getChannel.writeAndFlush(new RpcResponse(
             request.requestId,
             new NioManagedBuffer(streamHandle.toByteBuffer)))
+        } else if (fileInfo.isMemory) {
+
         } else {
-          val buffers = new FileManagedBuffers(fileInfo, conf)
+          val buffers = new LocalShuffleBuffers(fileInfo, conf)
           val streamId = streamManager.registerStream(buffers, client.getChannel)
           val streamHandle = new StreamHandle(streamId, fileInfo.numChunks())
           if (fileInfo.numChunks() == 0) {

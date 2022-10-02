@@ -30,7 +30,7 @@ import org.apache.commons.lang3.tuple.Pair;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.aliyun.emr.rss.common.meta.FileManagedBuffers;
+import com.aliyun.emr.rss.common.meta.LocalShuffleBuffers;
 import com.aliyun.emr.rss.common.network.buffer.ManagedBuffer;
 
 /**
@@ -45,7 +45,7 @@ public class OneForOneStreamManager extends StreamManager {
 
   /** State of a single stream. */
   protected static class StreamState {
-    final FileManagedBuffers buffers;
+    final LocalShuffleBuffers buffers;
 
     // The channel associated to the stream
     final Channel associatedChannel;
@@ -57,7 +57,7 @@ public class OneForOneStreamManager extends StreamManager {
     // Used to keep track of the number of chunks being transferred and not finished yet.
     volatile long chunksBeingTransferred = 0L;
 
-    StreamState(FileManagedBuffers buffers, Channel channel) {
+    StreamState(LocalShuffleBuffers buffers, Channel channel) {
       this.buffers = Preconditions.checkNotNull(buffers);
       this.associatedChannel = channel;
     }
@@ -82,7 +82,7 @@ public class OneForOneStreamManager extends StreamManager {
           String.format("Requested chunk index beyond end %s", chunkIndex));
     }
 
-    FileManagedBuffers buffers = state.buffers;
+    LocalShuffleBuffers buffers = state.buffers;
     if (buffers.hasAlreadyRead(chunkIndex)) {
       throw new IllegalStateException(
           String.format("Chunk %s for stream %s has already been read.", chunkIndex, streamId));
@@ -173,7 +173,7 @@ public class OneForOneStreamManager extends StreamManager {
    * to be the only reader of the stream. Once the connection is closed, the stream will never be
    * used again, enabling cleanup by `connectionTerminated`.
    */
-  public long registerStream(FileManagedBuffers buffers, Channel channel) {
+  public long registerStream(LocalShuffleBuffers buffers, Channel channel) {
     long myStreamId = nextStreamId.getAndIncrement();
     streams.put(myStreamId, new StreamState(buffers, channel));
     return myStreamId;

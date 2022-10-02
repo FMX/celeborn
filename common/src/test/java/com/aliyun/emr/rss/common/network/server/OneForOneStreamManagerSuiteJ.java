@@ -22,7 +22,7 @@ import org.junit.Assert;
 import org.junit.Test;
 import org.mockito.Mockito;
 
-import com.aliyun.emr.rss.common.meta.FileManagedBuffers;
+import com.aliyun.emr.rss.common.meta.LocalShuffleBuffers;
 
 public class OneForOneStreamManagerSuiteJ {
   @Test
@@ -30,10 +30,10 @@ public class OneForOneStreamManagerSuiteJ {
     OneForOneStreamManager manager = new OneForOneStreamManager();
 
     @SuppressWarnings("unchecked")
-    FileManagedBuffers buffers = Mockito.mock(FileManagedBuffers.class);
+    LocalShuffleBuffers buffers = Mockito.mock(LocalShuffleBuffers.class);
 
     @SuppressWarnings("unchecked")
-    FileManagedBuffers buffers2 = Mockito.mock(FileManagedBuffers.class);
+    LocalShuffleBuffers buffers2 = Mockito.mock(LocalShuffleBuffers.class);
 
     Channel dummyChannel = Mockito.mock(Channel.class, Mockito.RETURNS_SMART_NULLS);
     manager.registerStream(buffers, dummyChannel);
