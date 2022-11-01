@@ -1,0 +1,37 @@
+header:
+  license:
+    spdx-id: Apache-2.0
+    copyright-owner: Apache Software Foundation
+
+  paths-ignore:
+    - 'dist'
+    - 'licenses'
+    - '**/.*/**'
+    - '**/*.md'
+    - '**/*.json'
+    - '**/*.prefs'
+    - '**/*.log'
+    - '**/*.iml'
+    - '**/*.patch'
+    - '**/target/**'
+    - '**/out/**'
+    - '**/spark-warehouse/**'
+    - '**/metastore_db/**'
+    - '**/licenses/LICENSE*'
+    - '**/licenses-binary/LICENSE*'
+    - '**/dependency-reduced-pom.xml'
+    - '**/scalastyle-output.xml'
+    - 'NOTICE*'
+    - 'assets/**'
+    - 'build/apache-maven-*/**'
+    - 'build/scala-*/**'
+    - '**/benchmarks/**'
+    - 'LICENSE'
+    - 'NOTICE'
+
+  comment: on-failure
+
+# If you don't want to check dependencies' license compatibility, remove the following part
+dependency:
+  files:
+    - pom.xml           # If this is a maven project.
