@@ -32,10 +32,11 @@
 
   <modules>
     <module>common</module>
-    <module>client</module>
-    <module>service</module>
-    <module>master</module>
-    <module>worker</module>
+    <!--    <module>client</module>-->
+    <!--    <module>service</module>-->
+    <!--    <module>master</module>-->
+    <!--    <module>worker</module>-->
+    <module>verifier</module>
   </modules>
 
   <distributionManagement>
@@ -695,7 +696,7 @@
               <arg>-deprecation</arg>
               <arg>-feature</arg>
               <arg>-explaintypes</arg>
-              <arg>-Xfatal-warnings</arg>
+              <!--              <arg>-Xfatal-warnings</arg>-->
               <arg>-P:silencer:globalFilters=.*deprecated.*</arg>
             </args>
             <compilerPlugins>

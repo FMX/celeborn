@@ -412,6 +412,8 @@ object Utils extends Logging {
     if (conf.bindPreferIP) localIpAddress.getHostAddress else localIpAddress.getCanonicalHostName
   }
 
+  def localHostName(): String = localIpAddress.getHostAddress
+
   /**
    * Checks if the host contains only valid hostname/ip without port
    * NOTE: Incase of IPV6 ip it should be enclosed inside []
