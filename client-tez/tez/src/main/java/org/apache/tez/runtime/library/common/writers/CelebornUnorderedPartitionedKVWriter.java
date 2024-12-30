@@ -136,6 +136,10 @@ public class CelebornUnorderedPartitionedKVWriter extends KeyValuesWriter {
     if (availableMemory == 0) {
       availableMemory = 64 * 1024 * 1024;
     }
+    Logger.info(
+        "Celeborn unsorter availableMemory is {} ，pushMemory is {}",
+        availableMemory,
+        (int) (availableMemory * 0.8));
     pusher =
         new CelebornSortBasedPusher(
             keySerializer,

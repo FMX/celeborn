@@ -38,6 +38,7 @@ import org.slf4j.LoggerFactory;
 
 import org.apache.celeborn.client.CelebornTezReader;
 import org.apache.celeborn.client.ShuffleClient;
+import org.apache.celeborn.common.util.JavaUtils;
 
 class CelebornScheduler extends ShuffleScheduler {
   private static final Logger LOG = LoggerFactory.getLogger(ShuffleScheduler.class);
@@ -68,7 +69,8 @@ class CelebornScheduler extends ShuffleScheduler {
 
   private final Map<Integer, Set<InputAttemptIdentifier>> partitionIdToSuccessMapTaskAttempts =
       new HashMap<>();
-  final Map<Integer, Set<TezTaskID>> partitionIdToSuccessTezTasks = new HashMap<>();
+  final Map<Integer, Set<TezTaskID>> partitionIdToSuccessTezTasks =
+      JavaUtils.newConcurrentHashMap();
   private final TezCounter skippedInputCounter;
 
   public CelebornScheduler(

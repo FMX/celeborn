@@ -67,6 +67,10 @@ public class CelebornSortBasedPusher<K, V> extends OutputStream {
       CelebornTezWriter celebornTezWriter,
       CelebornConf celebornConf,
       boolean needSort) {
+    logger.info(
+        "CelebornSortBasedPusher init with maxIOBufferSize: {} spillIOBufferSize: {}",
+        maxIOBufferSize,
+        spillIOBufferSize);
     this.kSer = kSer;
     this.vSer = vSer;
     this.maxIOBufferSize = maxIOBufferSize;
@@ -128,6 +132,7 @@ public class CelebornSortBasedPusher<K, V> extends OutputStream {
   }
 
   private void sendKVAndUpdateWritePos() throws IOException {
+    logger.info("celeborn sort based pusher triggered push data.");
     Iterator<Map.Entry<Integer, List<SerializedKV>>> entryIter =
         partitionedKVs.entrySet().iterator();
     while (entryIter.hasNext()) {
