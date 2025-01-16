@@ -25,7 +25,7 @@ import org.scalatest.funsuite.AnyFunSuite
 import org.apache.celeborn.client.ShuffleClient
 import org.apache.celeborn.common.protocol.ShuffleMode
 
-class CelebornShuffleLostSuite extends AnyFunSuite
+class CelebornStageRerunSuite extends AnyFunSuite
   with SparkTestBase
   with BeforeAndAfterEach {
 
@@ -37,7 +37,7 @@ class CelebornShuffleLostSuite extends AnyFunSuite
     System.gc()
   }
 
-  test("celeborn shuffle data lost - hash") {
+  test("stage rerun for data lost - hash") {
     val sparkConf = new SparkConf().setAppName("celeborn-demo").setMaster("local[2]")
     val sparkSession = SparkSession.builder().config(sparkConf).getOrCreate()
     val combineResult = combine(sparkSession)
@@ -49,6 +49,8 @@ class CelebornShuffleLostSuite extends AnyFunSuite
     sparkSession.stop()
 
     val conf = updateSparkConf(sparkConf, ShuffleMode.HASH)
+    conf.set("spark.speculation", "true")
+    conf.set("spark.speculation.interval", "true")
     conf.set("spark.celeborn.client.spark.stageRerun.enabled", "true")
     conf.set("spark.celeborn.test.client.mockShuffleLost", "true")
 
@@ -68,4 +70,5 @@ class CelebornShuffleLostSuite extends AnyFunSuite
 
     celebornSparkSession.stop()
   }
+
 }

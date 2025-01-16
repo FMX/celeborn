@@ -37,7 +37,7 @@ trait SparkTestBase extends AnyFunSuite
   val Spark3OrNewer = SPARK_VERSION >= "3.0"
   println(s"Spark version is $SPARK_VERSION, Spark3OrNewer: $Spark3OrNewer")
 
-  private val sampleSeq = (1 to 78)
+  protected val sampleSeq = (1 to 78)
     .map(Random.alphanumeric)
     .toList
     .map(v => (v.toUpper, Random.nextInt(12) + 1))
@@ -78,8 +78,8 @@ trait SparkTestBase extends AnyFunSuite
     resultWithOutCeleborn
   }
 
-  def repartition(sparkSession: SparkSession): collection.Map[Char, Int] = {
-    val inputRdd = sparkSession.sparkContext.parallelize(sampleSeq, 2)
+  def repartition(sparkSession: SparkSession, parallelism: Int = 2): collection.Map[Char, Int] = {
+    val inputRdd = sparkSession.sparkContext.parallelize(sampleSeq, parallelism)
     val result = inputRdd.repartition(8).reduceByKey((acc, v) => acc + v).collectAsMap()
     result
   }
