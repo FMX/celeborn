@@ -25,23 +25,19 @@ import io.netty.buffer.ByteBuf
 
 import org.apache.celeborn.common.CelebornConf
 import org.apache.celeborn.common.meta.{DiskFileInfo, FileInfo, MemoryFileInfo}
-import org.apache.celeborn.common.metrics.source.AbstractSource
 import org.apache.celeborn.common.protocol.{PartitionType, StorageInfo}
 import org.apache.celeborn.service.deploy.worker.memory.MemoryManager
 
-class CelebornFileProxy(
+class TierWriterProxy(
     partitionDataWriterContext: PartitionDataWriterContext,
     storageManager: StorageManager,
     conf: CelebornConf,
     partitionType: PartitionType) {
   val memoryFileStorageMaxFileSize = conf.workerMemoryFileStorageMaxFileSize
-  val flushLock = new AnyRef
   val notifier = new FlushNotifier
   val numPendingWrites = new AtomicInteger
   @volatile var currentTierWriter: TierWriterBase = _
   @volatile var fileClosed = false
-  var flusher: Flusher = _
-  var flushWorkerIndex = 0
 
   currentTierWriter =
     storageManager.storagePolicy.createFileWriter(
@@ -103,6 +99,7 @@ class CelebornFileProxy(
           return new StorageInfo(StorageInfo.Type.HDFS, true, diskFileInfo.getFilePath)
         }
       }
+      val flusher = currentTierWriter.asInstanceOf[LocalTierWriter].getFlusher()
       new StorageInfo(flusher.asInstanceOf[LocalFlusher].diskType, true, "")
     } else if (currentTierWriter.fileInfo.isInstanceOf[MemoryFileInfo]) {
       new StorageInfo(StorageInfo.Type.MEMORY, true, "")
@@ -148,5 +145,15 @@ class CelebornFileProxy(
 
   def getMetaHandler(): PartitionMetaHandler = {
     currentTierWriter.metaHandler
+  }
+
+  def getFlusher(): Flusher = {
+    if (currentTierWriter.isInstanceOf[LocalTierWriter]) {
+      currentTierWriter.asInstanceOf[LocalTierWriter].getFlusher()
+    }
+    if (currentTierWriter.isInstanceOf[DfsTierWriter]) {
+      currentTierWriter.asInstanceOf[DfsTierWriter].getFlusher()
+    }
+    null
   }
 }

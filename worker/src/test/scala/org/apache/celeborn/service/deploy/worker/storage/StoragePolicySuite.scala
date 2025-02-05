@@ -18,26 +18,41 @@
 package org.apache.celeborn.service.deploy.worker.storage
 
 import java.io.File
+import java.util.concurrent.atomic.AtomicInteger
 
+import io.netty.buffer.UnpooledByteBufAllocator
 import org.mockito.ArgumentMatchers.any
-import org.mockito.MockitoSugar.mock
-import org.mockito.MockitoSugar.when
+import org.mockito.MockitoSugar.{mock, when}
 
 import org.apache.celeborn.CelebornFunSuite
 import org.apache.celeborn.common.CelebornConf
 import org.apache.celeborn.common.meta.{DiskFileInfo, MemoryFileInfo}
 import org.apache.celeborn.common.metrics.source.AbstractSource
-import org.apache.celeborn.common.protocol.{PartitionLocation, StorageInfo}
+import org.apache.celeborn.common.protocol.{PartitionLocation, PartitionType, StorageInfo}
+import org.apache.celeborn.service.deploy.worker.memory.MemoryManager
 
 class StoragePolicySuite extends CelebornFunSuite {
   val mockedStorageManager: StorageManager = mock[StorageManager]
   val mockedSource: AbstractSource = mock[AbstractSource]
   val mockedPartitionWriterContext: PartitionDataWriterContext = mock[PartitionDataWriterContext]
 
+  val conf = new CelebornConf
+  conf.set(CelebornConf.WORKER_DIRECT_MEMORY_RATIO_PAUSE_RECEIVE.key, "0.8")
+  conf.set(CelebornConf.WORKER_DIRECT_MEMORY_RATIO_PAUSE_REPLICATE.key, "0.9")
+  conf.set(CelebornConf.WORKER_DIRECT_MEMORY_RATIO_RESUME.key, "0.5")
+  conf.set(CelebornConf.WORKER_PARTITION_SORTER_DIRECT_MEMORY_RATIO_THRESHOLD.key, "0.6")
+  conf.set(CelebornConf.WORKER_DIRECT_MEMORY_RATIO_FOR_READ_BUFFER.key, "0.1")
+  conf.set(CelebornConf.WORKER_DIRECT_MEMORY_RATIO_FOR_MEMORY_FILE_STORAGE.key, "0.1")
+  conf.set(CelebornConf.WORKER_DIRECT_MEMORY_CHECK_INTERVAL.key, "10")
+  conf.set(CelebornConf.WORKER_DIRECT_MEMORY_REPORT_INTERVAL.key, "10")
+  conf.set(CelebornConf.WORKER_READBUFFER_ALLOCATIONWAIT.key, "10ms")
+  MemoryManager.initialize(conf)
+
   val mockedCelebornMemoryFile = mock[MemoryFileInfo]
   when(
     mockedStorageManager.createMemoryFileInfo(any(), any(), any(), any(), any(), any())).thenAnswer(
     mockedCelebornMemoryFile)
+  when(mockedStorageManager.storageBufferAllocator).thenAnswer(UnpooledByteBufAllocator.DEFAULT)
 
   val mockedDiskFile = mock[DiskFileInfo]
   val mockedFlusher = mock[Flusher]
@@ -52,32 +67,99 @@ class StoragePolicySuite extends CelebornFunSuite {
       any(),
       any())).thenAnswer((mockedFlusher, mockedDiskFile, mockedFile))
 
-  val mockedPartitionLocation =
+  val memoryHintPartitionLocation =
     new PartitionLocation(1, 1, "h1", 1, 2, 3, 4, PartitionLocation.Mode.PRIMARY)
-  when(mockedPartitionWriterContext.getPartitionLocation).thenAnswer(mockedPartitionLocation)
+  val memoryDisabledHintPartitionLocation =
+    new PartitionLocation(
+      1,
+      1,
+      "h1",
+      1,
+      2,
+      3,
+      4,
+      PartitionLocation.Mode.PRIMARY,
+      null,
+      new StorageInfo("mountpoint", StorageInfo.Type.MEMORY, StorageInfo.LOCAL_DISK_MASK),
+      null)
+  val localHintPartitionLocatioin =
+    new PartitionLocation(
+      1,
+      1,
+      "h1",
+      1,
+      2,
+      3,
+      4,
+      PartitionLocation.Mode.PRIMARY,
+      null,
+      new StorageInfo("mountpoint", StorageInfo.Type.SSD, 0),
+      null)
 
   test("test create file order case1") {
+    when(mockedPartitionWriterContext.getPartitionLocation).thenAnswer(memoryHintPartitionLocation)
     val conf = new CelebornConf()
     conf.set("celeborn.worker.storage.storagePolicy.createFilePolicy", "MEMORY,SSD,HDD,HDFS,OSS,S3")
     val storagePolicy = new StoragePolicy(conf, mockedStorageManager, mockedSource)
-    val file = storagePolicy.createFile(mockedPartitionWriterContext)
-    assert(file.isInstanceOf[CelebornMemoryFile])
+    val pendingWriters = new AtomicInteger()
+    val notifier = new FlushNotifier
+    val file = storagePolicy.createFileWriter(
+      mockedPartitionWriterContext,
+      PartitionType.REDUCE,
+      pendingWriters,
+      notifier)
+    assert(file.isInstanceOf[MemoryTierWriter])
   }
 
   test("test create file order case2") {
+    when(mockedPartitionWriterContext.getPartitionLocation).thenAnswer(localHintPartitionLocatioin)
+    when(mockedStorageManager.localOrDfsStorageAvailable).thenAnswer(true)
     val conf = new CelebornConf()
     conf.set("celeborn.worker.storage.storagePolicy.createFilePolicy", "SSD,HDD,HDFS,OSS,S3")
     val storagePolicy = new StoragePolicy(conf, mockedStorageManager, mockedSource)
-    val file = storagePolicy.createFile(mockedPartitionWriterContext)
-    assert(file.isInstanceOf[CelebornDiskFile])
+    val pendingWriters = new AtomicInteger()
+    val notifier = new FlushNotifier
+    val file = storagePolicy.createFileWriter(
+      mockedPartitionWriterContext,
+      PartitionType.REDUCE,
+      pendingWriters,
+      notifier)
+    assert(file.isInstanceOf[LocalTierWriter])
   }
 
   test("test getEvicted file case1") {
-    val mockedMemoryFile = mock[CelebornMemoryFile]
+    when(mockedPartitionWriterContext.getPartitionLocation).thenAnswer(localHintPartitionLocatioin)
+    when(mockedStorageManager.localOrDfsStorageAvailable).thenAnswer(true)
+    val mockedMemoryFile = mock[LocalTierWriter]
     val conf = new CelebornConf()
     val storagePolicy = new StoragePolicy(conf, mockedStorageManager, mockedSource)
+    val pendingWriters = new AtomicInteger()
+    val notifier = new FlushNotifier
     when(mockedMemoryFile.storageType).thenAnswer(StorageInfo.Type.MEMORY)
-    val nFile = storagePolicy.getEvictedFile(mockedMemoryFile, mockedPartitionWriterContext)
-    assert(nFile.isInstanceOf[CelebornDiskFile])
+    val nFile = storagePolicy.getEvictedFileWriter(
+      mockedMemoryFile,
+      mockedPartitionWriterContext,
+      PartitionType.REDUCE,
+      pendingWriters,
+      notifier)
+    assert(nFile.isInstanceOf[LocalTierWriter])
   }
+
+  test("test create file fallback case1") {
+    when(mockedPartitionWriterContext.getPartitionLocation).thenAnswer(
+      memoryDisabledHintPartitionLocation)
+    when(mockedStorageManager.localOrDfsStorageAvailable).thenAnswer(true)
+    val conf = new CelebornConf()
+    conf.set("celeborn.worker.storage.storagePolicy.createFilePolicy", "MEMORY,SSD,HDD,HDFS,OSS,S3")
+    val storagePolicy = new StoragePolicy(conf, mockedStorageManager, mockedSource)
+    val pendingWriters = new AtomicInteger()
+    val notifier = new FlushNotifier
+    val file = storagePolicy.createFileWriter(
+      mockedPartitionWriterContext,
+      PartitionType.REDUCE,
+      pendingWriters,
+      notifier)
+    assert(file.isInstanceOf[LocalTierWriter])
+  }
+
 }

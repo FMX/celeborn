@@ -181,7 +181,8 @@ abstract class TierWriterBase(
               dupBuf.skipBytes(compressedSize)
             }
             dupBuf.release
-          } else metaHandler.afterFlush(numBytes)
+          }
+          metaHandler.afterFlush(numBytes)
         } else {
           notifier.checkException()
           // if a flush buffer is larger than the chunk size, it might contain data of multiple chunks
@@ -290,6 +291,7 @@ class MemoryTierWriter(
       file.swapFlushBuffer(flushBuffer)
       file.flush(false, true)
       val numBytes = flushBuffer.readableBytes()
+      logDebug(s"Evict ${numBytes} from memory to other tier")
       MemoryManager.instance.releaseMemoryFileStorage(numBytes)
       MemoryManager.instance.incrementDiskBuffer(numBytes)
       storageManager.unregisterMemoryPartitionWriterAndFileInfo(fileInfo, shuffleKey, filename)
@@ -368,7 +370,7 @@ class LocalTierWriter(
     else
       null
 
-  private val channel: FileChannel =
+  private lazy val channel: FileChannel =
     FileChannelUtils.createWritableFileChannel(diskFileInfo.getFilePath);
 
   override def needEvict: Boolean = {
@@ -445,6 +447,10 @@ class LocalTierWriter(
       notifier.setException(e)
       throw e
     }
+  }
+
+  def getFlusher(): Flusher = {
+    flusher
   }
 }
 
@@ -606,5 +612,9 @@ class DfsTierWriter(
       notifier.setException(e)
       throw e
     }
+  }
+
+  def getFlusher(): Flusher = {
+    flusher
   }
 }
