@@ -114,9 +114,9 @@ public class MemoryPartitionFilesSorterSuiteJ {
     conf.set(CelebornConf.WORKER_READBUFFER_ALLOCATIONWAIT().key(), "10ms");
 
     StorageManager storageManager = Mockito.mock(StorageManager.class);
-    Mockito.when(storageManager.storageBufferAllocator()).thenAnswer(a -> allocator);
     MemoryManager.initialize(conf, storageManager, null);
     partitionDataWriter = Mockito.mock(PartitionDataWriter.class);
+    Mockito.when(storageManager.storageBufferAllocator()).thenReturn(allocator);
     when(partitionDataWriter.getMemoryFileInfo()).thenAnswer(i -> fileInfo);
 
     return partitionSize;
