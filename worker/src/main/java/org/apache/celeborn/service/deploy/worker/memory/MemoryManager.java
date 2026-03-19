@@ -335,11 +335,13 @@ public class MemoryManager {
     }
     switch (servingState) {
       case PUSH_PAUSED:
+        if (lastState == ServingState.PUSH_AND_REPLICATE_PAUSED) {
+          resumeReplicate();
+        }
         if (!tryResumeByPinnedMemory(servingState, lastState)) {
           pausePushDataCounter.increment();
           if (lastState == ServingState.PUSH_AND_REPLICATE_PAUSED) {
             appendPauseSpentTime(lastState);
-            resumeReplicate();
           } else {
             if (servingState != lastState) {
               pausePushDataStartTime = System.currentTimeMillis();
@@ -433,13 +435,7 @@ public class MemoryManager {
   }
 
   public void releaseSortMemory(long size) {
-    synchronized (this) {
-      if (sortMemoryCounter.get() - size < 0) {
-        sortMemoryCounter.set(0);
-      } else {
-        sortMemoryCounter.addAndGet(-1L * size);
-      }
-    }
+    sortMemoryCounter.updateAndGet(current -> Math.max(0, current - size));
   }
 
   public void incrementDiskBuffer(int size) {
