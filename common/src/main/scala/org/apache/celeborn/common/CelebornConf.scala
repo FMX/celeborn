@@ -679,6 +679,8 @@ class CelebornConf(loadDefaults: Boolean) extends Cloneable with Logging with Se
     get(MASTER_SLOT_ASSIGN_LOADAWARE_FLUSHTIME_WEIGHT)
   def masterSlotAssignLoadAwareFetchTimeWeight: Double =
     get(MASTER_SLOT_ASSIGN_LOADAWARE_FETCHTIME_WEIGHT)
+  def masterSlotAssignLoadAwareActiveSlotsWeight: Double =
+    get(MASTER_SLOT_ASSIGN_LOADAWARE_ACTIVE_SLOTS_WEIGHT)
   def masterSlotAssignExtraSlots: Int = get(MASTER_SLOT_ASSIGN_EXTRA_SLOTS)
   def masterSlotAssignMaxWorkers: Int = get(MASTER_SLOT_ASSIGN_MAX_WORKERS)
   def masterSlotAssignMinWorkers: Int = get(MASTER_SLOT_ASSIGN_MIN_WORKERS)
@@ -728,6 +730,8 @@ class CelebornConf(loadDefaults: Boolean) extends Cloneable with Logging with Se
   def masterHttpIdleTimeout: Long = get(MASTER_HTTP_IDLE_TIMEOUT)
 
   def haEnabled: Boolean = get(HA_ENABLED)
+  def haMasterGracefulShutdownEnabled: Boolean = get(HA_MASTER_GRACEFUL_SHUTDOWN_ENABLED)
+  def haMasterGracefulShutdownTimeoutMs: Long = get(HA_MASTER_GRACEFUL_SHUTDOWN_TIMEOUT)
 
   def haMasterNodeId: Option[String] = get(HA_MASTER_NODE_ID)
 
@@ -894,11 +898,11 @@ class CelebornConf(loadDefaults: Boolean) extends Cloneable with Logging with Se
   def workerJvmQuakeDumpThreshold: Duration =
     getTimeAsMs(
       WORKER_JVM_QUAKE_DUMP_THRESHOLD.key,
-      WORKER_JVM_QUAKE_DUMP_THRESHOLD.defaultValueString).microsecond
+      WORKER_JVM_QUAKE_DUMP_THRESHOLD.defaultValueString).millisecond
   def workerJvmQuakeKillThreshold: Duration =
     getTimeAsMs(
       WORKER_JVM_QUAKE_KILL_THRESHOLD.key,
-      WORKER_JVM_QUAKE_KILL_THRESHOLD.defaultValueString).microsecond
+      WORKER_JVM_QUAKE_KILL_THRESHOLD.defaultValueString).millisecond
   def workerJvmQuakeExitCode: Int = get(WORKER_JVM_QUAKE_EXIT_CODE)
 
   // //////////////////////////////////////////////////////
@@ -2779,6 +2783,27 @@ object CelebornConf extends Logging {
       .booleanConf
       .createWithDefault(false)
 
+  val HA_MASTER_GRACEFUL_SHUTDOWN_ENABLED: ConfigEntry[Boolean] =
+    buildConf("celeborn.master.ha.graceful.shutdown.enabled")
+      .categories("ha")
+      .version("0.7.0")
+      .doc("When true, the master will transfer Raft leadership " +
+        "before shutting down gracefully. This reduces chances of " +
+        "client side failures by avoiding the Raft election window " +
+        "where no leader is available.")
+      .booleanConf
+      .createWithDefault(false)
+
+  val HA_MASTER_GRACEFUL_SHUTDOWN_TIMEOUT: ConfigEntry[Long] =
+    buildConf("celeborn.master.ha.graceful.shutdown.timeout")
+      .categories("ha")
+      .version("0.7.0")
+      .doc("Timeout for the master graceful shutdown process including " +
+        "Raft leadership transfer. Used as the shutdown hook timeout " +
+        "and the transfer-leadership request timeout.")
+      .timeConf(TimeUnit.MILLISECONDS)
+      .createWithDefaultString("30s")
+
   val HA_MASTER_NODE_ID: OptionalConfigEntry[String] =
     buildConf("celeborn.master.ha.node.id")
       .withAlternative("celeborn.ha.master.node.id")
@@ -3130,6 +3155,15 @@ object CelebornConf extends Logging {
       .version("0.3.0")
       .doubleConf
       .createWithDefault(1)
+
+  val MASTER_SLOT_ASSIGN_LOADAWARE_ACTIVE_SLOTS_WEIGHT: ConfigEntry[Double] =
+    buildConf("celeborn.master.slot.assign.loadAware.activeSlotsWeight")
+      .categories("master")
+      .doc(
+        "Weight of active slots when calculating ordering in load-aware assignment strategy")
+      .version("0.7.0")
+      .doubleConf
+      .createWithDefault(0)
 
   val MASTER_SLOT_ASSIGN_EXTRA_SLOTS: ConfigEntry[Int] =
     buildConf("celeborn.master.slot.assign.extraSlots")
