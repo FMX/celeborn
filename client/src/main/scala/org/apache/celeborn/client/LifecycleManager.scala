@@ -36,7 +36,6 @@ import scala.util.Random
 
 import com.google.common.annotations.VisibleForTesting
 import com.google.common.cache.{Cache, CacheBuilder}
-import org.roaringbitmap.RoaringBitmap
 
 import org.apache.celeborn.client.LifecycleManager.{ShuffleAllocatedWorkers, ShuffleFailedWorkers}
 import org.apache.celeborn.client.listener.WorkerStatusListener
@@ -1654,7 +1653,7 @@ class LifecycleManager(val appUniqueId: String, val conf: CelebornConf) extends 
       PartitionLocation.Mode.PRIMARY,
       null,
       new StorageInfo("", storageTypes.head, availableStorageTypes),
-      new RoaringBitmap())
+      null)
     if (pushReplicateEnabled) {
       var replicaIndex = (primaryIndex + 1) % candidates.size
       while (pushRackAwareEnabled && isOnSameRack(primaryIndex, replicaIndex)
@@ -1676,7 +1675,7 @@ class LifecycleManager(val appUniqueId: String, val conf: CelebornConf) extends 
         PartitionLocation.Mode.REPLICA,
         primaryLocation,
         new StorageInfo("", storageTypes.head, availableStorageTypes),
-        new RoaringBitmap())
+        null)
       primaryLocation.setPeer(replicaLocation)
       val primaryAndReplicaPairs = slots.computeIfAbsent(candidates(replicaIndex), newLocationFunc)
       primaryAndReplicaPairs._2.add(replicaLocation)

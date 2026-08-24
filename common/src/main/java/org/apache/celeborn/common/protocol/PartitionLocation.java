@@ -23,7 +23,14 @@ import org.roaringbitmap.RoaringBitmap;
 
 import org.apache.celeborn.common.meta.WorkerInfo;
 
+/**
+ * Describes a partition location. Java serialization is retained for same-version internal use; its
+ * serialized form is not a cross-version compatibility contract.
+ */
 public class PartitionLocation implements Serializable {
+  private static final RoaringBitmap EMPTY_MAP_ID_BITMAP = new RoaringBitmap();
+  private static final long INVALID_PARSED_INT = Long.MIN_VALUE;
+
   public enum Mode {
     PRIMARY(0),
     REPLICA(1);
@@ -54,26 +61,16 @@ public class PartitionLocation implements Serializable {
 
   private int id;
   private int epoch;
-  private String host;
-  private int rpcPort;
-  private int pushPort;
-  private int fetchPort;
-  private int replicatePort;
+  private volatile WorkerEndpoint endpoint;
   private Mode mode;
   private PartitionLocation peer;
-  private StorageInfo storageInfo;
-  private RoaringBitmap mapIdBitMap;
-  private transient String _hostPushPort;
-  private transient String _hostFetchPort;
+  private volatile StorageInfo storageInfo;
+  private volatile RoaringBitmap mapIdBitMap;
 
   public PartitionLocation(PartitionLocation loc) {
     this.id = loc.id;
     this.epoch = loc.epoch;
-    this.host = loc.host;
-    this.rpcPort = loc.rpcPort;
-    this.pushPort = loc.pushPort;
-    this.fetchPort = loc.fetchPort;
-    this.replicatePort = loc.replicatePort;
+    this.endpoint = loc.endpoint;
     this.mode = loc.mode;
     this.peer = loc.peer;
     this.storageInfo = loc.storageInfo;
@@ -89,18 +86,7 @@ public class PartitionLocation implements Serializable {
       int fetchPort,
       int replicatePort,
       Mode mode) {
-    this(
-        id,
-        epoch,
-        host,
-        rpcPort,
-        pushPort,
-        fetchPort,
-        replicatePort,
-        mode,
-        null,
-        new StorageInfo(),
-        new RoaringBitmap());
+    this(id, epoch, host, rpcPort, pushPort, fetchPort, replicatePort, mode, null, null, null);
   }
 
   public PartitionLocation(
@@ -113,18 +99,7 @@ public class PartitionLocation implements Serializable {
       int replicatePort,
       Mode mode,
       PartitionLocation peer) {
-    this(
-        id,
-        epoch,
-        host,
-        rpcPort,
-        pushPort,
-        fetchPort,
-        replicatePort,
-        mode,
-        peer,
-        new StorageInfo(),
-        new RoaringBitmap());
+    this(id, epoch, host, rpcPort, pushPort, fetchPort, replicatePort, mode, peer, null, null);
   }
 
   public PartitionLocation(
@@ -141,13 +116,9 @@ public class PartitionLocation implements Serializable {
       RoaringBitmap mapIdBitMap) {
     this.id = id;
     this.epoch = epoch;
-    this.host = host;
-    this.rpcPort = rpcPort;
-    this.pushPort = pushPort;
-    this.fetchPort = fetchPort;
-    this.replicatePort = replicatePort;
+    this.endpoint = WorkerEndpoint.apply(host, rpcPort, pushPort, fetchPort, replicatePort);
     this.mode = mode;
-    this.peer = peer;
+    setPeer(peer);
     this.storageInfo = hint;
     this.mapIdBitMap = mapIdBitMap;
   }
@@ -169,54 +140,69 @@ public class PartitionLocation implements Serializable {
   }
 
   public String getHost() {
-    return host;
+    return endpoint.host();
   }
 
-  public void setHost(String host) {
-    this.host = host;
+  public synchronized void setHost(String host) {
+    WorkerEndpoint current = endpoint;
+    this.endpoint =
+        WorkerEndpoint.apply(
+            host,
+            current.rpcPort(),
+            current.pushPort(),
+            current.fetchPort(),
+            current.replicatePort());
   }
 
   public int getPushPort() {
-    return pushPort;
+    return endpoint.pushPort();
   }
 
-  public void setPushPort(int pushPort) {
-    this.pushPort = pushPort;
+  public synchronized void setPushPort(int pushPort) {
+    WorkerEndpoint current = endpoint;
+    this.endpoint =
+        WorkerEndpoint.apply(
+            current.host(),
+            current.rpcPort(),
+            pushPort,
+            current.fetchPort(),
+            current.replicatePort());
   }
 
   public int getFetchPort() {
-    return fetchPort;
+    return endpoint.fetchPort();
   }
 
-  public void setFetchPort(int fetchPort) {
-    this.fetchPort = fetchPort;
+  public synchronized void setFetchPort(int fetchPort) {
+    WorkerEndpoint current = endpoint;
+    this.endpoint =
+        WorkerEndpoint.apply(
+            current.host(),
+            current.rpcPort(),
+            current.pushPort(),
+            fetchPort,
+            current.replicatePort());
   }
 
   public String hostAndPorts() {
     return "host-rpcPort-pushPort-fetchPort-replicatePort:"
-        + host
+        + getHost()
         + "-"
-        + rpcPort
+        + getRpcPort()
         + "-"
-        + pushPort
+        + getPushPort()
         + "-"
-        + fetchPort
+        + getFetchPort()
         + "-"
-        + replicatePort;
+        + getReplicatePort();
   }
 
   public String hostAndFetchPort() {
-    if (_hostFetchPort == null) {
-      _hostFetchPort = host + ":" + fetchPort;
-    }
-    return _hostFetchPort;
+    return endpoint.hostAndFetchPort();
   }
 
   public String hostAndPushPort() {
-    if (_hostPushPort == null) {
-      _hostPushPort = host + ":" + pushPort;
-    }
-    return _hostPushPort;
+    return endpoint.hostAndPushPort();
   }
 
   public Mode getMode() {
@@ -243,32 +229,93 @@ public class PartitionLocation implements Serializable {
     return id + "-" + epoch;
   }
 
+  public long getUniqueIdLong() {
+    return toUniqueIdLong(id, epoch);
+  }
+
+  public static long toUniqueIdLong(int id, int epoch) {
+    return ((long) id << 32) | (epoch & 0xffffffffL);
+  }
+
+  public static long toUniqueIdLong(String uniqueId) {
+    Long packedUniqueId = tryToUniqueIdLong(uniqueId);
+    if (packedUniqueId == null) {
+      throw new IllegalArgumentException("Invalid partition location unique id: " + uniqueId);
+    }
+    return packedUniqueId;
+  }
+
+  public static Long tryToUniqueIdLong(String uniqueId) {
+    if (uniqueId == null || uniqueId.length() < 3) {
+      return null;
+    }
+    int idStart = uniqueId.charAt(0) == '-' ? 1 : 0;
+    int separatorIndex = uniqueId.indexOf('-', idStart);
+    if (separatorIndex < 0) {
+      return null;
+    }
+    long id = tryParseInt(uniqueId, 0, separatorIndex);
+    long epoch = tryParseInt(uniqueId, separatorIndex + 1, uniqueId.length());
+    if (id == INVALID_PARSED_INT || epoch == INVALID_PARSED_INT) {
+      return null;
+    }
+    return toUniqueIdLong((int) id, (int) epoch);
+  }
+
   /** @see PartitionLocation#getFileName */
   public String getFileName() {
     return id + "-" + epoch + "-" + mode.mode;
   }
 
   public int getRpcPort() {
-    return rpcPort;
+    return endpoint.rpcPort();
   }
 
-  public void setRpcPort(int rpcPort) {
-    this.rpcPort = rpcPort;
+  public synchronized void setRpcPort(int rpcPort) {
+    WorkerEndpoint current = endpoint;
+    this.endpoint =
+        WorkerEndpoint.apply(
+            current.host(),
+            rpcPort,
+            current.pushPort(),
+            current.fetchPort(),
+            current.replicatePort());
   }
 
   public int getReplicatePort() {
-    return replicatePort;
+    return endpoint.replicatePort();
   }
 
-  public void setReplicatePort(int replicatePort) {
-    this.replicatePort = replicatePort;
+  public synchronized void setReplicatePort(int replicatePort) {
+    WorkerEndpoint current = endpoint;
+    this.endpoint =
+        WorkerEndpoint.apply(
+            current.host(),
+            current.rpcPort(),
+            current.pushPort(),
+            current.fetchPort(),
+            replicatePort);
   }
 
   public StorageInfo getStorageInfo() {
-    return storageInfo;
+    return getStorageInfoOrCreate();
   }
 
-  public void setStorageInfo(StorageInfo storageInfo) {
+  public StorageInfo getStorageInfoOrCreate() {
+    StorageInfo current = storageInfo;
+    if (current == null) {
+      synchronized (this) {
+        current = storageInfo;
+        if (current == null) {
+          current = new StorageInfo();
+          storageInfo = current;
+        }
+      }
+    }
+    return current;
+  }
+
+  public synchronized void setStorageInfo(StorageInfo storageInfo) {
     this.storageInfo = storageInfo;
   }
 
@@ -280,15 +327,15 @@ public class PartitionLocation implements Serializable {
     PartitionLocation o = (PartitionLocation) other;
     return id == o.id
         && epoch == o.epoch
-        && host.equals(o.host)
-        && rpcPort == o.rpcPort
-        && pushPort == o.pushPort
-        && fetchPort == o.fetchPort;
+        && getHost().equals(o.getHost())
+        && getRpcPort() == o.getRpcPort()
+        && getPushPort() == o.getPushPort()
+        && getFetchPort() == o.getFetchPort();
   }
 
   @Override
   public int hashCode() {
-    return (id + epoch + host + rpcPort + pushPort + fetchPort).hashCode();
+    return (id + epoch + getHost() + getRpcPort() + getPushPort() + getFetchPort()).hashCode();
   }
 
   @Override
@@ -303,15 +350,15 @@ public class PartitionLocation implements Serializable {
         + "-"
         + epoch
         + "\n  host-rpcPort-pushPort-fetchPort-replicatePort:"
-        + host
+        + getHost()
         + "-"
-        + rpcPort
+        + getRpcPort()
         + "-"
-        + pushPort
+        + getPushPort()
         + "-"
-        + fetchPort
+        + getFetchPort()
         + "-"
-        + replicatePort
+        + getReplicatePort()
         + "\n  mode:"
         + mode
         + "\n  peer:("
@@ -319,19 +366,64 @@ public class PartitionLocation implements Serializable {
         + ")\n  storage hint:"
         + storageInfo
         + "\n  mapIdBitMap:"
-        + mapIdBitMap
+        + (mapIdBitMap == null ? EMPTY_MAP_ID_BITMAP : mapIdBitMap)
         + "]";
   }
 
   public WorkerInfo getWorker() {
-    return new WorkerInfo(host, rpcPort, pushPort, fetchPort, replicatePort);
+    return new WorkerInfo(
+        getHost(), getRpcPort(), getPushPort(), getFetchPort(), getReplicatePort());
   }
 
   public RoaringBitmap getMapIdBitMap() {
+    return getMapIdBitMapOrCreate();
+  }
+
+  public RoaringBitmap getMapIdBitMapIfPresent() {
     return mapIdBitMap;
   }
 
-  public void setMapIdBitMap(RoaringBitmap mapIdBitMap) {
+  public RoaringBitmap getMapIdBitMapOrCreate() {
+    RoaringBitmap current = mapIdBitMap;
+    if (current == null) {
+      synchronized (this) {
+        current = mapIdBitMap;
+        if (current == null) {
+          current = new RoaringBitmap();
+          mapIdBitMap = current;
+        }
+      }
+    }
+    return current;
+  }
+
+  public synchronized void setMapIdBitMap(RoaringBitmap mapIdBitMap) {
     this.mapIdBitMap = mapIdBitMap;
+  }
+
+  private static long tryParseInt(String value, int start, int end) {
+    if (start >= end) {
+      return INVALID_PARSED_INT;
+    }
+    boolean negative = value.charAt(start) == '-';
+    int index = negative ? start + 1 : start;
+    if (index >= end) {
+      return INVALID_PARSED_INT;
+    }
+    long result = 0;
+    long limit = negative ? -(long) Integer.MIN_VALUE : Integer.MAX_VALUE;
+    while (index < end) {
+      char current = value.charAt(index);
+      if (current < '0' || current > '9') {
+        return INVALID_PARSED_INT;
+      }
+      int digit = current - '0';
+      if (result > (limit - digit) / 10) {
+        return INVALID_PARSED_INT;
+      }
+      result = result * 10 + digit;
+      index++;
+    }
+    return negative ? -result : result;
   }
 }
