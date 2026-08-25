@@ -18,40 +18,77 @@
 package org.apache.celeborn.common.protocol;
 
 import java.lang.reflect.Field;
-import java.lang.reflect.Method;
 
 import org.junit.Ignore;
 import org.junit.Test;
+import org.openjdk.jol.info.GraphLayout;
+import org.roaringbitmap.RoaringBitmap;
 
 @Ignore("Manual JOL benchmark; run main to print retained-size comparisons.")
 public class PartitionLocationMemorySuiteJ {
 
   private static final int ENDPOINT_COUNT = 2000;
+  private static final int DEFAULT_PAIR_COUNT = 10_000;
+  private static final String ALLOCATOR_SCENARIO = "allocator";
+  private static final String PACKED_DESERIALIZED_PAIR_SCENARIO = "packed-deserialized-pair";
 
   public static void main(String[] args) throws Exception {
-    int pairCount = args.length > 0 && "largePeer".equals(args[0]) ? 1_000_000 : 10_000;
-    new PartitionLocationMemorySuiteJ().printPeerPairFootprint(pairCount, ENDPOINT_COUNT);
+    String scenario = args.length > 0 ? args[0] : ALLOCATOR_SCENARIO;
+    int pairCount = args.length > 1 ? Integer.parseInt(args[1]) : DEFAULT_PAIR_COUNT;
+    if (pairCount <= 0) {
+      throw new IllegalArgumentException("pairCount must be positive: " + pairCount);
+    }
+    if (!ALLOCATOR_SCENARIO.equals(scenario)
+        && !PACKED_DESERIALIZED_PAIR_SCENARIO.equals(scenario)) {
+      throw new IllegalArgumentException(
+          "Unknown scenario: " + scenario + ". Expected allocator or packed-deserialized-pair.");
+    }
+    new PartitionLocationMemorySuiteJ().printPeerPairFootprint(scenario, pairCount, ENDPOINT_COUNT);
   }
 
   @Test
   public void printPartitionLocationFootprint() throws Exception {
-    printPeerPairFootprint(10_000, ENDPOINT_COUNT);
+    printPeerPairFootprint(ALLOCATOR_SCENARIO, DEFAULT_PAIR_COUNT, ENDPOINT_COUNT);
   }
 
-  private void printPeerPairFootprint(int pairCount, int endpointCount) throws Exception {
+  private void printPeerPairFootprint(String scenario, int pairCount, int endpointCount)
+      throws Exception {
+    String[] endpointHosts = endpointHosts(endpointCount);
+    boolean allocatorShaped = ALLOCATOR_SCENARIO.equals(scenario);
     compare(
-        loadGraphLayout(),
-        pairCount + " partition peer pairs across " + endpointCount + " endpoints",
-        newOldLocationPairArray(pairCount, endpointCount),
-        newLocationPairArray(pairCount, endpointCount));
+        scenario + "-shaped, " + pairCount + " peer pairs across " + endpointCount + " endpoints",
+        newOldLocationPairArray(pairCount, endpointHosts, allocatorShaped),
+        newLocationPairArray(pairCount, endpointHosts, allocatorShaped));
   }
 
-  private PartitionLocation[] newLocationPairArray(int size, int endpointCount) {
+  private String[] endpointHosts(int endpointCount) {
+    String[] hosts = new String[endpointCount];
+    for (int i = 0; i < endpointCount; i++) {
+      hosts[i] = "localhost-" + i;
+    }
+    return hosts;
+  }
+
+  private PartitionLocation[] newLocationPairArray(
+      int size, String[] endpointHosts, boolean allocatorShaped) {
     PartitionLocation[] locations = new PartitionLocation[size * 2];
     for (int i = 0; i < size; i++) {
-      int endpointIndex = i % endpointCount;
-      PartitionLocation primary = newLocation(i, endpointIndex, PartitionLocation.Mode.PRIMARY);
-      PartitionLocation replica = newLocation(i, endpointIndex, PartitionLocation.Mode.REPLICA);
+      int primaryEndpointIndex = i % endpointHosts.length;
+      int replicaEndpointIndex = (primaryEndpointIndex + 1) % endpointHosts.length;
+      PartitionLocation primary =
+          newLocation(
+              i,
+              primaryEndpointIndex,
+              endpointHosts,
+              allocatorShaped,
+              PartitionLocation.Mode.PRIMARY);
+      PartitionLocation replica =
+          newLocation(
+              i,
+              replicaEndpointIndex,
+              endpointHosts,
+              allocatorShaped,
+              PartitionLocation.Mode.REPLICA);
       primary.setPeer(replica);
       replica.setPeer(primary);
       locations[i * 2] = primary;
@@ -60,26 +97,46 @@ public class PartitionLocationMemorySuiteJ {
     return locations;
   }
 
-  private PartitionLocation newLocation(int id, int endpointIndex, PartitionLocation.Mode mode) {
+  private PartitionLocation newLocation(
+      int id,
+      int endpointIndex,
+      String[] endpointHosts,
+      boolean allocatorShaped,
+      PartitionLocation.Mode mode) {
     return new PartitionLocation(
         id,
         0,
-        "localhost-" + endpointIndex,
+        locationHost(endpointHosts[endpointIndex], allocatorShaped),
         1001 + endpointIndex,
         1002 + endpointIndex,
         1003 + endpointIndex,
         1004 + endpointIndex,
-        mode);
+        mode,
+        null,
+        newStorageInfo(),
+        null);
   }
 
-  private PartitionLocationOld[] newOldLocationPairArray(int size, int endpointCount) {
+  private PartitionLocationOld[] newOldLocationPairArray(
+      int size, String[] endpointHosts, boolean allocatorShaped) {
     PartitionLocationOld[] locations = new PartitionLocationOld[size * 2];
     for (int i = 0; i < size; i++) {
-      int endpointIndex = i % endpointCount;
+      int primaryEndpointIndex = i % endpointHosts.length;
+      int replicaEndpointIndex = (primaryEndpointIndex + 1) % endpointHosts.length;
       PartitionLocationOld primary =
-          newOldLocation(i, endpointIndex, PartitionLocation.Mode.PRIMARY);
+          newOldLocation(
+              i,
+              primaryEndpointIndex,
+              endpointHosts,
+              allocatorShaped,
+              PartitionLocation.Mode.PRIMARY);
       PartitionLocationOld replica =
-          newOldLocation(i, endpointIndex, PartitionLocation.Mode.REPLICA);
+          newOldLocation(
+              i,
+              replicaEndpointIndex,
+              endpointHosts,
+              allocatorShaped,
+              PartitionLocation.Mode.REPLICA);
       primary.setPeer(replica);
       replica.setPeer(primary);
       locations[i * 2] = primary;
@@ -89,39 +146,57 @@ public class PartitionLocationMemorySuiteJ {
   }
 
   private PartitionLocationOld newOldLocation(
-      int id, int endpointIndex, PartitionLocation.Mode mode) {
+      int id,
+      int endpointIndex,
+      String[] endpointHosts,
+      boolean allocatorShaped,
+      PartitionLocation.Mode mode) {
     return new PartitionLocationOld(
         id,
         0,
-        "localhost-" + endpointIndex,
+        locationHost(endpointHosts[endpointIndex], allocatorShaped),
         1001 + endpointIndex,
         1002 + endpointIndex,
         1003 + endpointIndex,
         1004 + endpointIndex,
-        mode);
+        mode,
+        null,
+        newStorageInfo(),
+        allocatorShaped ? new RoaringBitmap() : null);
   }
 
-  private Class<?> loadGraphLayout() throws ClassNotFoundException {
-    return Class.forName("org.openjdk.jol.info.GraphLayout");
+  private String locationHost(String endpointHost, boolean allocatorShaped) {
+    // Allocators reuse WorkerInfo.host. Packed protobuf decoding creates a new host string per
+    // location while splitting the encoded worker ID. This scenario measures one decoded pair's
+    // retained object shape, not an entire WorkerResource response.
+    return allocatorShaped ? endpointHost : new String(endpointHost.toCharArray());
   }
 
-  private void compare(Class<?> graphLayout, String label, Object oldValue, Object newValue)
-      throws Exception {
-    long oldSize = totalSize(graphLayout, oldValue);
-    long newLocationSize = totalSize(graphLayout, newValue);
-    long newSizeIncludingInterner = totalSize(graphLayout, newValue, endpointInterner());
+  private StorageInfo newStorageInfo() {
+    return new StorageInfo("", StorageInfo.Type.MEMORY, StorageInfo.ALL_TYPES_AVAILABLE_MASK);
+  }
+
+  private void compare(String label, Object oldValue, Object newValue) throws Exception {
+    long oldSize = GraphLayout.parseInstance(oldValue).totalSize();
+    long newLocationSize = GraphLayout.parseInstance(newValue).totalSize();
+    long newSizeIncludingInterner =
+        GraphLayout.parseInstance(newValue, endpointInterner()).totalSize();
     long internerOverhead = newSizeIncludingInterner - newLocationSize;
     long saved = oldSize - newSizeIncludingInterner;
     double savedPercentage = oldSize == 0 ? 0 : saved * 100.0 / oldSize;
+    int locationCount = java.lang.reflect.Array.getLength(oldValue);
     System.out.printf(
         "PartitionLocation footprint [%s]: old=%d bytes, "
             + "newLocations=%d bytes, weakInternerOverhead=%d bytes, "
-            + "newIncludingLiveInterner=%d bytes, savedIncludingLiveInterner=%d bytes (%.2f%%)%n",
+            + "newIncludingLiveInterner=%d bytes, oldBytesPerLocation=%.2f, "
+            + "newBytesPerLocation=%.2f, savedIncludingLiveInterner=%d bytes (%.2f%%)%n",
         label,
         oldSize,
         newLocationSize,
         internerOverhead,
         newSizeIncludingInterner,
+        oldSize / (double) locationCount,
+        newSizeIncludingInterner / (double) locationCount,
         saved,
         savedPercentage);
     if (newSizeIncludingInterner >= oldSize) {
@@ -129,19 +204,6 @@ public class PartitionLocationMemorySuiteJ {
           "Optimized PartitionLocation retained size including its weak interner must be smaller for "
               + label);
     }
-  }
-
-  private long totalSize(Class<?> graphLayout, Object value) throws Exception {
-    return totalSize(graphLayout, value, null);
-  }
-
-  private long totalSize(Class<?> graphLayout, Object value, Object additionalRoot)
-      throws Exception {
-    Method parseInstance = graphLayout.getMethod("parseInstance", Object[].class);
-    Object[] roots =
-        additionalRoot == null ? new Object[] {value} : new Object[] {value, additionalRoot};
-    Object layout = parseInstance.invoke(null, new Object[] {roots});
-    return (Long) graphLayout.getMethod("totalSize").invoke(layout);
   }
 
   private Object endpointInterner() throws Exception {

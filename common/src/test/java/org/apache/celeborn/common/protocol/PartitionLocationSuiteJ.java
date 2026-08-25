@@ -321,37 +321,6 @@ public class PartitionLocationSuiteJ {
   }
 
   @Test
-  public void testUniqueIdLong() {
-    PartitionLocation location =
-        new PartitionLocation(100, 200, host, rpcPort, pushPort, fetchPort, replicatePort, mode);
-
-    assertEquals(PartitionLocation.toUniqueIdLong(100, 200), location.getUniqueIdLong());
-    assertEquals(location.getUniqueIdLong(), PartitionLocation.toUniqueIdLong("100-200"));
-    assertEquals(
-        Long.valueOf(PartitionLocation.toUniqueIdLong(Integer.MIN_VALUE, Integer.MIN_VALUE)),
-        PartitionLocation.tryToUniqueIdLong("-2147483648--2147483648"));
-    assertEquals(
-        Long.valueOf(PartitionLocation.toUniqueIdLong(Integer.MAX_VALUE, Integer.MAX_VALUE)),
-        PartitionLocation.tryToUniqueIdLong("2147483647-2147483647"));
-  }
-
-  @Test
-  public void testInvalidUniqueIdFormatsAreRejected() {
-    assertNull(PartitionLocation.tryToUniqueIdLong(null));
-    assertNull(PartitionLocation.tryToUniqueIdLong(""));
-    assertNull(PartitionLocation.tryToUniqueIdLong("1"));
-    assertNull(PartitionLocation.tryToUniqueIdLong("-"));
-    assertNull(PartitionLocation.tryToUniqueIdLong("1-"));
-    assertNull(PartitionLocation.tryToUniqueIdLong("-1"));
-    assertNull(PartitionLocation.tryToUniqueIdLong("1-0-extra"));
-    assertNull(PartitionLocation.tryToUniqueIdLong("1--0-extra"));
-    assertNull(PartitionLocation.tryToUniqueIdLong("2147483648-0"));
-    assertNull(PartitionLocation.tryToUniqueIdLong("0-2147483648"));
-    assertNull(PartitionLocation.tryToUniqueIdLong("999999999999999999999999999999-0"));
-    assertNull(PartitionLocation.tryToUniqueIdLong("+1-0"));
-  }
-
-  @Test
   public void testWorkerEndpointKeepsWorkerInfoCompatible() {
     PartitionLocation location1 =
         new PartitionLocation(

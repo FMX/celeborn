@@ -45,20 +45,10 @@ final class PartitionLocationOld implements Serializable {
       int pushPort,
       int fetchPort,
       int replicatePort,
-      PartitionLocation.Mode mode) {
-    this(id, epoch, host, rpcPort, pushPort, fetchPort, replicatePort, mode, null);
-  }
-
-  PartitionLocationOld(
-      int id,
-      int epoch,
-      String host,
-      int rpcPort,
-      int pushPort,
-      int fetchPort,
-      int replicatePort,
       PartitionLocation.Mode mode,
-      PartitionLocationOld peer) {
+      PartitionLocationOld peer,
+      StorageInfo storageInfo,
+      RoaringBitmap mapIdBitMap) {
     this.id = id;
     this.epoch = epoch;
     this.host = host;
@@ -68,8 +58,8 @@ final class PartitionLocationOld implements Serializable {
     this.replicatePort = replicatePort;
     this.mode = mode;
     this.peer = peer;
-    this.storageInfo = new StorageInfo();
-    this.mapIdBitMap = new RoaringBitmap();
+    this.storageInfo = storageInfo;
+    this.mapIdBitMap = mapIdBitMap;
   }
 
   void setPeer(PartitionLocationOld peer) {

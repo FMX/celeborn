@@ -185,6 +185,13 @@ public abstract class CelebornInputStream extends InputStream {
       // Missing filter metadata cannot prove that this location is irrelevant.
       return false;
     }
+    if (startMapIndex >= endMapIndex) {
+      return true;
+    }
+    if (startMapIndex >= 0) {
+      return !bitmap.intersects((long) startMapIndex, (long) endMapIndex);
+    }
+    // Preserve the previous unsigned-int behavior for unexpected negative map indexes.
     for (int i = startMapIndex; i < endMapIndex; i++) {
       if (bitmap.contains(i)) {
         return false;

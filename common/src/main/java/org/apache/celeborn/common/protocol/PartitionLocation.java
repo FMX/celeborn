@@ -29,7 +29,6 @@ import org.apache.celeborn.common.meta.WorkerInfo;
  */
 public class PartitionLocation implements Serializable {
   private static final RoaringBitmap EMPTY_MAP_ID_BITMAP = new RoaringBitmap();
-  private static final long INVALID_PARSED_INT = Long.MIN_VALUE;
 
   public enum Mode {
     PRIMARY(0),
@@ -229,39 +228,6 @@ public class PartitionLocation implements Serializable {
     return id + "-" + epoch;
   }
 
-  public long getUniqueIdLong() {
-    return toUniqueIdLong(id, epoch);
-  }
-
-  public static long toUniqueIdLong(int id, int epoch) {
-    return ((long) id << 32) | (epoch & 0xffffffffL);
-  }
-
-  public static long toUniqueIdLong(String uniqueId) {
-    Long packedUniqueId = tryToUniqueIdLong(uniqueId);
-    if (packedUniqueId == null) {
-      throw new IllegalArgumentException("Invalid partition location unique id: " + uniqueId);
-    }
-    return packedUniqueId;
-  }
-
-  public static Long tryToUniqueIdLong(String uniqueId) {
-    if (uniqueId == null || uniqueId.length() < 3) {
-      return null;
-    }
-    int idStart = uniqueId.charAt(0) == '-' ? 1 : 0;
-    int separatorIndex = uniqueId.indexOf('-', idStart);
-    if (separatorIndex < 0) {
-      return null;
-    }
-    long id = tryParseInt(uniqueId, 0, separatorIndex);
-    long epoch = tryParseInt(uniqueId, separatorIndex + 1, uniqueId.length());
-    if (id == INVALID_PARSED_INT || epoch == INVALID_PARSED_INT) {
-      return null;
-    }
-    return toUniqueIdLong((int) id, (int) epoch);
-  }
-
   /** @see PartitionLocation#getFileName */
   public String getFileName() {
     return id + "-" + epoch + "-" + mode.mode;
@@ -399,31 +365,5 @@ public class PartitionLocation implements Serializable {
 
   public synchronized void setMapIdBitMap(RoaringBitmap mapIdBitMap) {
     this.mapIdBitMap = mapIdBitMap;
-  }
-
-  private static long tryParseInt(String value, int start, int end) {
-    if (start >= end) {
-      return INVALID_PARSED_INT;
-    }
-    boolean negative = value.charAt(start) == '-';
-    int index = negative ? start + 1 : start;
-    if (index >= end) {
-      return INVALID_PARSED_INT;
-    }
-    long result = 0;
-    long limit = negative ? -(long) Integer.MIN_VALUE : Integer.MAX_VALUE;
-    while (index < end) {
-      char current = value.charAt(index);
-      if (current < '0' || current > '9') {
-        return INVALID_PARSED_INT;
-      }
-      int digit = current - '0';
-      if (result > (limit - digit) / 10) {
-        return INVALID_PARSED_INT;
-      }
-      result = result * 10 + digit;
-      index++;
-    }
-    return negative ? -result : result;
   }
 }

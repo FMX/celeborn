@@ -311,6 +311,33 @@ public class CelebornInputStreamPeerFailoverTest {
     assertTrue(CelebornInputStream.shouldSkipLocation(true, 6, 10, primary));
   }
 
+  @Test
+  public void testRangeReadFilterUsesHalfOpenRange() {
+    PartitionLocation location = createPartitionLocation(PRIMARY_HOST);
+    RoaringBitmap bitmap = new RoaringBitmap();
+    bitmap.add(5);
+    bitmap.add(10);
+    location.setMapIdBitMap(bitmap);
+
+    assertFalse(CelebornInputStream.shouldSkipLocation(true, 5, 10, location));
+    assertTrue(CelebornInputStream.shouldSkipLocation(true, 6, 10, location));
+  }
+
+  @Test
+  public void testRangeReadFilterHandlesEmptyAndSentinelRanges() {
+    PartitionLocation location = createPartitionLocation(PRIMARY_HOST);
+    RoaringBitmap bitmap = new RoaringBitmap();
+    bitmap.add(5);
+    location.setMapIdBitMap(bitmap);
+
+    assertTrue(CelebornInputStream.shouldSkipLocation(true, 5, 5, location));
+    assertTrue(CelebornInputStream.shouldSkipLocation(true, 10, 5, location));
+    assertTrue(CelebornInputStream.shouldSkipLocation(true, -1, -1, location));
+
+    bitmap.add(-1);
+    assertFalse(CelebornInputStream.shouldSkipLocation(true, -1, 0, location));
+  }
+
   private CelebornInputStream createInputStream(String primaryHost, String replicaHost)
       throws IOException {
     return createInputStream(primaryHost, replicaHost, null);
